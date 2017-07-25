@@ -53,7 +53,7 @@ def display_solution(board):
     print('')
 
 
-def generate_solve():
+def generate_solve_python():
     """Generate Python source string for the recursive solve() function."""
     stack = []
     lines = ["""
@@ -96,6 +96,58 @@ def solve(board, pos, used):
             add(indent + 'if not board[pos + {}]:'.format(offset))
             indent += ' ' * 4
             stack.append(offset)
+    return '\n'.join(lines)
+
+
+def generate_solve_c():
+    """Generate C source string for the recursive solve() function."""
+    piece_letters = 'filnptuvwxyz'
+    stack = []
+    lines = []
+    add = lines.append
+    add('#define X_PIECE_NUM {}'.format(piece_letters.index('x')))
+    add("""
+void solve(char* board, int pos, unsigned int used) {
+    if (used == (1 << NUM_PIECES) - 1) {
+        display_solution(board);
+        return;
+    }
+
+    while (board[pos]) {
+        pos++;
+    }
+""")
+    indent = ' ' * 4
+    for c in ORIENTATIONS:
+        if c == '.':
+            indent = indent[:-4]
+            add(indent + '}')
+            stack.pop()
+        elif c > 'a':
+            # Found a piece that fits: if it's not yet used, place it and
+            # solve rest of board recursively
+            piece_num = piece_letters.index(c)
+            add(indent + 'if ((used & (1<<{})) == 0) {{'.format(piece_num))
+            add(indent + '    _num_tries++;')
+            add(indent + '    used ^= 1<<{};'.format(piece_num))
+            for offset in stack:
+                add(indent + '    board[pos + {}] = {!r};'.format(offset, c))
+            add(indent + '    solve(board, pos, used);')
+            for offset in stack:
+                add(indent + '    board[pos + {}] = 0;'.format(offset))
+            add(indent + '    used ^= 1<<{};'.format(piece_num))
+            add(indent + '}')
+            indent = indent[:-4]
+            add(indent + '}')
+            stack.pop()
+        else:
+            i = ord(c) - ord('A') + 3
+            x, y = i % 8, i // 8
+            offset = y * TOTAL_WIDTH + x - 3
+            add(indent + 'if (board[pos + {}] == 0) {{'.format(offset))
+            indent += ' ' * 4
+            stack.append(offset)
+    add('}')
     return '\n'.join(lines)
 
 
@@ -143,7 +195,7 @@ if __name__ == '__main__':
             description='Solve a 6x10 or 4x15 pentomino puzzle')
     parser.add_argument('-q', '--quiet', action='store_true',
                         help='quiet mode (only display totals at the end')
-    parser.add_argument('-s', '--source', action='store_true',
+    parser.add_argument('-s', '--source', choices=['python', 'c'],
                         help="output solve() source instead of solving")
     parser.add_argument('-z', '--size', default='6x10', choices=['6x10', '4x15'],
                         help='size of board, default %(default)s')
@@ -158,11 +210,13 @@ if __name__ == '__main__':
     else:
         solve_all = solve_6x10
 
-    solve_source = generate_solve()
     if args.source:
+        generate_func = globals()['generate_solve_' + args.source]
+        solve_source = generate_func()
         print(solve_source)
         sys.exit()
 
+    solve_source = generate_solve_python()
     exec(solve_source)  # define global solve() function
     board = make_board()
     start_time = time.time()
