@@ -151,6 +151,58 @@ void solve(char* board, int pos, unsigned int used) {
     return '\n'.join(lines)
 
 
+def generate_solve_pyast64():
+    """Generate pyast64 source string for the recursive solve() function."""
+    piece_letters = 'filnptuvwxyz'
+    stack = []
+    lines = []
+    add = lines.append
+    add("""
+def solve(board, pos, used, _num_solutions, _num_tries):
+    if used == {all_used}:
+        display_solution(board, _num_solutions)
+        return
+
+    while board[pos]:
+        pos += 1
+""".format(all_used=(1 << NUM_PIECES) - 1))
+    indent = ' ' * 4
+    for c in ORIENTATIONS:
+        if c == '.':
+            indent = indent[:-4]
+            stack.pop()
+        elif c > 'a':
+            # Found a piece that fits: if it's not yet used, place it and
+            # solve rest of board recursively
+            piece_num = piece_letters.index(c)
+            add(indent + 'if used & {} == 0:'.format(1 << piece_num))
+            add(indent + '    _num_tries[0] += 1')
+            add(indent + '    used ^= {}'.format(1 << piece_num))
+            for offset in stack:
+                add(indent + '    board[pos + {}] = {}'.format(offset, ord(c)))
+            add(indent + '    solve(board, pos, used)')
+            for offset in stack:
+                add(indent + '    board[pos + {}] = 0'.format(offset))
+            add(indent + '    used ^= {}'.format(1 << piece_num))
+            indent = indent[:-4]
+            stack.pop()
+        else:
+            i = ord(c) - ord('A') + 3
+            x, y = i % 8, i // 8
+            offset = y * TOTAL_WIDTH + x - 3
+            add(indent + 'if board[pos + {}] == 0:'.format(offset))
+            indent += ' ' * 4
+            stack.append(offset)
+
+    solve_source = '\n'.join(lines)
+
+    with open('pentomino.p64.template') as f:
+        template = f.read()
+    source = template.replace('_X_PIECE_BIT_', str(1 << piece_letters.index('x')))
+    source = template.replace('_SOLVE_', solve_source)
+    return source
+
+
 def place_x(board, x, y, value):
     """Place the 'x' piece at given location (or lift it if value is None)."""
     pos = TOTAL_WIDTH * y + x
@@ -195,7 +247,7 @@ if __name__ == '__main__':
             description='Solve a 6x10 or 4x15 pentomino puzzle')
     parser.add_argument('-q', '--quiet', action='store_true',
                         help='quiet mode (only display totals at the end')
-    parser.add_argument('-s', '--source', choices=['python', 'c'],
+    parser.add_argument('-s', '--source', choices=['python', 'c', 'pyast64'],
                         help="output solve() source instead of solving")
     parser.add_argument('-z', '--size', default='6x10', choices=['6x10', '4x15'],
                         help='size of board, default %(default)s')
